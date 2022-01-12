@@ -1,0 +1,101 @@
+---
+title: "adasSubscores"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = getwd())
+```
+
+## subset the data for adas sub-scores, adas 1 to adas 11
+
+```{r cars}
+#https://pdfs.semanticscholar.org/ed89/7aad02f24231123f0682fdf885aca5ff6d69.pdf
+#adas_cogData = read.csv(paste(getwd(), '/AddNeuroMed/Data from Groupshare/ADAS-COG/data.csv', sep = ""))
+load(paste(getwd(), "/ADNIMERGE - 23.10.2019/ADNIMERGE/data/adas.rdata", sep = ""))
+adas_cogData = adas
+##subset character columns except entity_id##
+adasSubscores = grep("ADAS\\_[0-9]*$", colnames(adas_cogData), value = TRUE)
+adasSubSet = adas_cogData[,c("RID",adasSubscores, "ADAS_COG_Total")]
+##replacing Not_applicable with NA
+adasSubSet[adasSubSet == "Not_applicable"] = NA
+adasSubSet[adasSubSet == ""] = NA
+```
+
+
+## replacing the text in adas individual data with values 
+```{r, echo = FALSE}
+library(stringr)
+##extract the columns with character##
+charCols = colnames(adasSubSet[,sapply(adasSubSet, class) %in% c('factor', 'character')])
+print(charCols)
+charCols = setdiff(charCols, "entity_id")
+adasSubSet[,charCols] <- lapply(adasSubSet[,charCols], as.character)
+adas_cogVariables <- read_csv(paste(getwd(), "/AddNeuroMed/Data from Groupshare/ADAS-COG/variables.csv", sep =""))
+adas_cogVariables$`categories:en` <- sapply(adas_cogVariables$`categories:en`, gsub, pattern = "=", replacement= ", ")
+adas_cogVariables$`categories:en` <- sapply(adas_cogVariables$`categories:en`, gsub, pattern = ";", replacement= "\n")
+
+##extract numeric values for adas scores from text
+for(names in charCols){
+  for(i in 1:nrow(adasSubSet)){
+      print(is.na(adasSubSet[i,names]))
+      if(is.na(adasSubSet[i, names]) == FALSE){
+        if(adasSubSet[i, names] != ""){
+       text <- adasSubSet[i, names]
+       print("Text")
+       print(text)
+       meaningOfText = subset(adas_cogVariables$`categories:en`, adas_cogVariables$name == names)
+       print(meaningOfText)
+       loc <- str_locate(meaningOfText, paste(text, "\\,(.*|.*\n.*)\\([0-9]+\\)", sep = ""))
+       print(loc)
+       numValue <- substr(meaningOfText, loc[1,"start"], loc[1, "end"])
+       print(numValue)
+       numValue <- gsub(".*\\(", "", numValue)
+       print(numValue)
+       numValue <- (gsub("\\)", "", numValue))
+       print(numValue)
+       numValue <- as.numeric(as.character(numValue))
+       adasSubSet[i,names]=numValue
+      }
+    }
+  }
+}
+##converting all character columns to numeric
+adasSubSet[,c(adasSubscores, "ADAS_COG_Total")] <- lapply(adasSubSet[,c(adasSubscores, "ADAS_COG_Total")], as.numeric)
+```
+
+##Validating of the generation of numeric scores for individual ADAS
+```{r}
+##checking if all features are missing for a patient
+indexAllNAadas <- rowSums(is.na(adasSubSet)) == ncol(adasSubSet)-1
+adasSubSet <- adasSubSet[which(indexAllNAadas == FALSE),]
+indexAllNAadasFP <- rowSums(is.na(adasSubSet)) == (ncol(adasSubSet)-2)
+adasSubSet <- adasSubSet[which(indexAllNAadasFP == FALSE),]
+adasSubSet$ADAS_total_validate <- rowSums(adasSubSet[,adasSubscores], na.rm = TRUE)
+idx <- sub('.*\\_', '', adasSubSet$ADAS_COG_Total) == sub('.*\\_', '', adasSubSet$ADAS_total_validate)
+adasSubSet[which(idx == FALSE), "entity_id"]
+```
+
+
+##dividing the scores into 4 or 3 cateogaries, memory, language, praxis and concentration(not in this case,only in ADAS 13)
+```{r}
+##for AddNeuroMed
+##memory: add ADAS 1, 4, 6, 7, 8 AND 9
+adasSubSet$ADAS_Memory = rowSums(adasSubSet[,c("ADAS_1", "ADAS_4", "ADAS_6", "ADAS_7", "ADAS_8", "ADAS_9")])
+
+##language: add ADAS 2, 10, 11
+adasSubSet$ADAS_Language = rowSums(adasSubSet[,c("ADAS_2", "ADAS_10", "ADAS_11")])
+
+##praxis: add ADAS 5, 3
+adasSubSet$ADAS_Praxis = rowSums(adasSubSet[,c("ADAS_3", "ADAS_5")])
+```
+
+##save workspace
+```{r, echo=FALSE}
+save.image(paste(getwd(), "/Scripts/adasPreprocessing.RData", sep = ""))
+save(adasSubSet, file = paste(getwd(), "/Scripts/adasSubSet.RData", sep = ""))
+```
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
