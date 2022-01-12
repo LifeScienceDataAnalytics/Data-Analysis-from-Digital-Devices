@@ -1,0 +1,627 @@
+---
+title: "dataPreparation"
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r}
+rm(list=ls())
+library(plyr)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set('dataPreparationADNI.Rmd', encoding = 'UTF-8')
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = getwd())
+```
+
+##adni data##
+```{r}
+load(paste(getwd(), "/ADNIMERGE_Aug2020/data/adnimerge.rdata", sep = ""))
+adnimerge$long.age <- round((adnimerge[,"AGE"] + adnimerge[,"Years.bl"]), digits =1)
+```
+
+##Normalizing the brain volumes by ICV
+```{r}
+brainVolumesNotICV <- c("Ventricles", "Hippocampus", "WholeBrain", "Entorhinal", "Fusiform", "MidTemp")
+funcDividebyICV = function(df){
+  for(cols in brainVolumesNotICV){
+    df[,cols] = df[,cols]/df[,"ICV"]
+  }
+  return(df)
+}
+
+adnimerge = funcDividebyICV(adnimerge)
+```
+
+##number of patients##
+```{r}
+length(unique(adnimerge$RID))
+```
+
+##diagnostic distribution at baseline##
+```{r}
+print("All patients in total are:")
+adnimergeAtBl = subset(adnimerge, adnimerge$Month == 0)
+length(unique(adnimergeAtBl$RID))
+table(adnimergeAtBl$DX.bl)
+```
+
+```{r}
+##Choose which type of measures you want to do pattern analysis for
+# func.typeof.data <- function()
+# {
+#   user_input <- "Do you want to do trajectory predictions  for :
+#   1. MCIandDementia
+#   2. DeNovo
+#   3. Control
+#   4. MCIandDementiaFAQ
+#   "
+#   type_of_data <- readline(prompt = user_input)
+#   return(type_of_data)
+# }
+# type_of_data <- func.typeof.data()
+```
+
+```{r}
+##extract the IDs that are there in Salah's data
+#ADNI_IDs <- read_csv("~/Documents/Documents_IT/ADNIVAMBN/VAMBNForADNI/ADNI_IDs.csv")
+#final_data_classifier = read_csv("ADNI_shuffle_08_10_2020.csv")
+finalDf = adnimerge
+```
+
+```{r}
+##remove the patients that revert from Dementia to MCI or CN
+aggDiagnosis <- ddply(finalDf, .(RID), summarise, DX = toString(DX))
+
+func.revert <- function(aggDf){
+    patientidConv <- c()
+for(i in 1:nrow(aggDf)){
+  if(grepl("^Dementia(.*MCI|.*\\,\\sMCI|\\,\\sMCI|.*\\,\\sMCI$|.*CN|.*\\,\\sCN|\\,\\sCN|.*\\,\\sCN$)", aggDf[i,2])){
+      patientidConv <- c(patientidConv, aggDf[i,1])
+  }
+   # if(grepl("^MCI(.*CN|\\,\\sCN|.*\\,\\sCN|.*\\,\\sMCI$)", aggDf[i,2])){
+   #    patientidConv <- c(patientidConv, aggDf[i,1])
+   # }
+     if(grepl("^CN.*MCI.*Dementia(.*CN|\\,\\sCN|.*\\,\\sCN|.*\\,\\sMCI$)", aggDf[i,2])){
+      patientidConv <- c(patientidConv, aggDf[i,1])
+     }
+  if(grepl("^MCI.*Dementia(.*CN|\\,\\sCN|.*\\,\\sCN|.*\\,\\sMCI$)", aggDf[i,2])){
+      patientidConv <- c(patientidConv, aggDf[i,1])
+     }
+  
+}
+  print("Patients reverting")
+  print(patientidConv)
+  return(patientidConv)
+}
+
+
+# if(type_of_data %in%  c("MCIandDementia","MCIandDementiaFAQ")){
+#   patientid <- c()
+#   for(i in 1:nrow(aggDiagnosis)){
+#     if(grepl("Dementia", aggDiagnosis[i,2])){
+#        patientid <- c(patientid, aggDiagnosis[i,1])
+#     }
+#   }
+#   atleastOneADdf <- adnimerge[which(adnimerge$RID %in% patientid),]
+#   aggDiagnosisAD <- ddply(atleastOneADdf, .(RID), summarise, DX = toString(DX))
+#   patientidMCI <- c()
+#   for(i in 1:nrow(aggDiagnosisAD)){
+#     if(grepl("MCI", aggDiagnosisAD[i,2])){
+#         patientidMCI <- c(patientidMCI, aggDiagnosisAD[i,1])
+#     }
+#   }
+#   atleastOneMCIdf <- atleastOneADdf[which(atleastOneADdf$RID %in% patientidMCI),]
+#   aggDiagnosisMCI <- ddply(atleastOneMCIdf, .(RID), summarise, DX = toString(DX))
+#   patientidConv <- func.revert(aggDiagnosisMCI)
+#   ##remove these ids from the df as they are recoverting to MCI or CTL from AD and CTL from MCI##
+#   finalDf <- atleastOneMCIdf[which(!atleastOneMCIdf$RID %in% patientidConv),]
+# }
+# 
+# if(type_of_data == "DeNovo"){
+#   ##patients with subjects having Dementia diagnosis throughout
+#   onlyDementia <- c()
+#   for(i in 1:nrow(aggDiagnosis)){
+#     if(grepl("^(?!.*MCI)^Dementia.*Dementia$",aggDiagnosis[i,2],perl=TRUE)){
+#     onlyDementia <- c(onlyDementia, aggDiagnosis[i,1])
+#       }
+#   }
+#   deNovoDementia <- adnimerge[which(adnimerge$RID %in% onlyDementia),]
+#   aggDiagnosisDementia <- ddply(deNovoDementia, .(RID), summarize, DX = toString(DX))
+#   patientidConv <- func.revert(aggDiagnosisDementia)
+#   finalDf <- deNovoDementia[which(!deNovoDementia$RID %in% patientidConv),]
+# }
+# 
+# if(type_of_data == "Control"){
+#   ##control subjects##
+#   onlyCN<- c()
+#   for(i in 1:nrow(aggDiagnosis)){
+#     if(grepl("^(?!.*MCI|Dementia)^CN.*CN$",aggDiagnosis[i,2],perl=TRUE)){
+#       onlyCN <- c(onlyCN, aggDiagnosis[i,1])
+#     }
+#   }
+#   control <- adnimerge[which(adnimerge$RID %in% onlyCN),]
+#   aggDiagnosisControl <- ddply(control, .(RID), summarize, DX = toString(DX))
+#   patientidConv <- func.revert(aggDiagnosisControl)
+#   finalDf <- control[which(!control$RID %in% patientidConv),]
+# }
+patientidConv <- func.revert(aggDiagnosis)
+finalDf <- finalDf[which(!finalDf$RID %in% patientidConv),]
+length(unique(finalDf$RID))
+```
+
+##patients converting from NL to MCI to Dementia
+```{r}
+ts <- ddply(finalDf, .(RID), summarise, DX = toString(DX))
+nlSubjects <- subset(ts, grepl("CN", ts$DX, perl = TRUE))
+length(unique(nlSubjects))
+```
+
+##extract only cognitive scores from adnimerge##
+```{r}
+mri <- c("Ventricles", "Hippocampus", "WholeBrain", "Entorhinal", "Fusiform", "MidTemp", "ICV")
+#ravlt <- grep("^RAVLT.*[^bl]$", colnames(finalDf), value = TRUE)
+#ecog <- grep("^Ecog.*[^bl]$",  colnames(adnimerge), value = TRUE)
+#cognition <- c("MMSE", "CDRSB", "ADAS13", "ADAS11", "MOCA", "LDELTOTAL", "DIGITSCOR", "TRABSCOR", "mPACCdigit", "mPACCtrailsB")
+csf <- c("ABETA", "TAU", "PTAU")
+imagingPET <- c("PIB","FDG","AV45")
+finalDf <- finalDf[,c("RID", "PTID", "AGE", "PTGENDER",  "PTEDUCAT", "PTETHCAT", "PTRACCAT", "PTMARRY", "APOE4", "VISCODE", "ORIGPROT", "COLPROT", "DX",imagingPET, mri,csf)]
+```
+
+##add polygenic risk scores from a table##
+```{r}
+load(paste(getwd(), "/ADNIMERGE_Aug2020/data/desikanlab.rdata", sep = ""))
+finalDf <- merge(finalDf, desikanlab[,c("RID", "PHS")])
+```
+
+##merge adas individual scores to the table##
+```{r}
+##for ADNI
+##subset adas table for subscores Q scores:
+# load(paste(getwd(), "/ADNIMERGE_Aug2020/data/adas.rdata", sep = ""))
+# adas$VISCODE[adas$RID == "1052" & adas$USERDATE == "2019-04-02"] <- "m156" #This is hard coded as it's a mistake in original dataset.
+# adas$VISCODE[adas$RID == "4175" & adas$USERDATE == "2019-04-24"] <- "m96"
+# adas$VISCODE[adas$RID == "4926" & adas$USERDATE == "2019-03-20"] <- "m81"
+# adasSubSetAdni = adas[,c("RID", "VISCODE", "ORIGPROT", "COLPROT", grep("Q[0-9]*SCORE$", colnames(adas), value =TRUE))]
+# ##memory: add Q1SCORE, Q4SCORE, Q7SCORE, Q8SCORE, Q9SCORE
+# adasSubSetAdni$ADAS_Memory = rowSums(adasSubSetAdni[,grep("Q(1|4|7|8|9)SCORE$", colnames(adasSubSetAdni), value = TRUE)])
+# ##language: add Q2SCORE, Q5SCORE, Q10SCORE, Q11SCORE, Q12SCORE
+# adasSubSetAdni$ADAS_Language = rowSums(adasSubSetAdni[,grep("Q(2|5|10|11|12)SCORE$", colnames(adasSubSetAdni), value = TRUE)])
+# ##praxis: add Q3SCORE, Q6SCORE 
+# adasSubSetAdni$ADAS_Praxis = rowSums(adasSubSetAdni[,grep("Q(3|6)SCORE$", colnames(adasSubSetAdni), value = TRUE)])
+# ##concentration:  Q13SCORE
+# adasSubSetAdni$ADAS_Concentration = adasSubSetAdni[,"Q13SCORE"]
+# adasVarsADNI = adasSubSetAdni[,c("RID", "VISCODE", "ORIGPROT", "COLPROT", "ADAS_Memory", "ADAS_Language", "ADAS_Praxis", "ADAS_Concentration")]
+# combinedDataADNI <- merge(adasVarsADNI, finalDf,by = c("RID", "VISCODE", "ORIGPROT", "COLPROT"))
+# length(unique(combinedDataADNI$RID))
+combinedDataADNI = finalDf
+```
+
+##merge mmse individual scores to the table##
+```{r}
+##for ADNI
+##subset adas table for subscores Q scores:
+load(paste(getwd(), "/ADNIMERGE_Aug2020/data/mmse.rdata", sep = ""))
+mmse = mmse
+#mmse[mmse=="Incorrect"]<-0
+subItemScores = c("MMDATE", "MMYEAR", "MMMONTH", "MMDAY", "MMSEASON", "MMHOSPIT", "MMFLOOR", "MMCITY", "MMAREA", "MMSTATE", "MMBALL", "MMFLAG", "MMTREE", "MMD", "MML", "MMR", "MMO", "MMW", "MMBALLDL", "MMFLAGDL", "MMTREEDL", "MMWATCH", "MMPENCIL", "MMREPEAT", "MMHAND", "MMFOLD", "MMONFLR", "MMREAD", "MMWRITE", "MMDRAW")
+
+mmse <- data.frame(lapply(mmse, function(x) {
+                 gsub("0 - incorrect", 0, x)
+            }))
+mmse <- data.frame(lapply(mmse, function(x) {
+                 gsub("0 - Incorrect",0, x)
+            }))
+mmse <- data.frame(lapply(mmse, function(x) {
+                 gsub("1 - Correct", 1, x)
+            }))
+mmse <- data.frame(lapply(mmse, function(x) {
+                 gsub("1 - correct", 1, x)
+            }))
+mmse <- data.frame(lapply(mmse, function(x) {
+                 gsub("Correct", 1, x)
+            }))
+mmse <- data.frame(lapply(mmse, function(x) {
+                 gsub("Incorrect", 0, x)
+            }))
+mmse <- data.frame(lapply(mmse, function(x) {
+                 gsub("sc", "bl", x)
+            }))
+mmse <- data.frame(lapply(mmse, function(x) {
+                 gsub("f", "bl", x)
+            }))
+mmse <- data.frame(lapply(mmse, function(x) {
+                 gsub("y1", "m12", x)
+            }))
+mmse[,subItemScores] = lapply(mmse[,subItemScores], as.character)
+mmse[,subItemScores] = lapply(mmse[,subItemScores], as.numeric)
+
+collaborativeScoresMMSE= c("MMSE_Orientation", "MMSE_Working_Memory_Registration", "MMSE_Attention_Concentration", "MMSE_Memory_Recall","MMSE_Language")
+mmse["MMSE_TIME"] = rowSums(mmse[,c("MMDATE", "MMYEAR", "MMMONTH", "MMDAY", "MMSEASON")])
+mmse["MMSE_PLACE"] = rowSums(mmse[,c("MMHOSPIT", "MMFLOOR", "MMCITY", "MMAREA", "MMSTATE")])
+mmse["MMSE_Working_Memory_Registration"] = rowSums(mmse[,c("MMBALL", "MMFLAG", "MMTREE")])
+mmse["MMSE_Attention_Concentration"] = rowSums(mmse[,c("MMD", "MML", "MMR", "MMO", "MMW")])
+mmse["MMSE_Memory_Recall"] = rowSums(mmse[,c("MMBALLDL", "MMFLAGDL", "MMTREEDL")])
+mmse["MMSE_Language"] = rowSums(mmse[,c("MMWATCH", "MMPENCIL")])
+mmse["MMSE_REPETITION"] =  mmse[,"MMREPEAT"]
+mmse["MMSE_COMMANDS"] =rowSums(mmse[,c("MMHAND", "MMFOLD", "MMONFLR", "MMREAD", "MMWRITE", "MMDRAW")])
+mmse["MMSE_Language"] = mmse$MMSE_Language +  mmse$MMSE_REPETITION +  mmse$MMSE_COMMANDS
+mmse["MMSE_Orientation"] = mmse$MMSE_TIME +  mmse$MMSE_PLACE
+combinedDataADNImmse <- merge(mmse[c("RID", "VISCODE", "ORIGPROT", "COLPROT", collaborativeScoresMMSE)], combinedDataADNI,by = c("RID", "VISCODE", "ORIGPROT", "COLPROT"))
+length(unique(combinedDataADNImmse$RID))
+```
+
+##cdrsb individual scores to the table##
+```{r}
+##for CDRSB
+##subset faq table for subscores Q scores:
+# load(paste(getwd(), "/ADNIMERGE_Aug2020/data/cdr.rdata", sep = ""))
+# cdrsbRelevant <- cdr[,c("RID","VISCODE","ORIGPROT","COLPROT","CDCARE", "CDCOMMUN", "CDHOME", "CDJUDGE",
+#                         "CDMEMORY", "CDORIENT")]
+# combinedAdniCDRSB <- merge(combinedDataADNImmse, cdrsbRelevant, by = c("RID","VISCODE", "ORIGPROT", "COLPROT"))
+# length(unique(combinedAdniCDRSB$RID))
+```
+
+
+
+##merge faq individual scores to the table##
+```{r}
+#library(tidyverse)
+library(dplyr)
+##for ADNI
+##subset faq table for subscores Q scores:
+load(paste(getwd(), "/ADNIMERGE_Aug2020/data/faq.rdata", sep = ""))
+faq$VISCODE[faq$RID == "1052" & faq$USERDATE == "2019-03-29"] <- "m156"
+faq$VISCODE[faq$RID == "4175" & faq$USERDATE == "2019-03-18"] <- "m96"
+faq$VISCODE[faq$RID == "5075" & faq$USERDATE == "2018-12-05"] <- "m72"
+faq$VISCODE[faq$RID == "4926" & faq$USERDATE == "2019-03-21"] <- "m81"
+#faq[2308,5] <- "m106"
+print("Number of Patients:")
+length(unique(faq$RID))
+library(dplyr)
+library(stringr)
+faqRelevant <- faq[,c("RID","VISCODE","ORIGPROT","COLPROT","FAQFINAN","FAQFORM","FAQSHOP","FAQGAME","FAQBEVG","FAQMEAL","FAQEVENT","FAQTV","FAQREM","FAQTRAVL","FAQTOTAL")]
+faqTests <- faqRelevant %>%  dplyr::select(starts_with("FAQ"))
+faqTests<- colnames(faqTests)
+num.extract <- function(string){
+  str_extract(string, "\\-*\\d+\\.*\\d*")
+  string <- as.numeric(str_extract(string, "\\-*\\d+\\.*\\d*"))
+}
+faqRelevant[,c(faqTests)] <- lapply(faqRelevant[,c(faqTests)],num.extract)
+combinedAdniFaq <- merge(combinedDataADNImmse, faqRelevant, by = c("RID","VISCODE", "ORIGPROT", "COLPROT"))
+length(unique(combinedAdniFaq$RID))
+```
+
+
+##delete the patients with just one time point##
+```{r}
+func.del.patients.single.time.point <- function(data){
+  library(plyr)
+  aggVisit <- ddply(data, .(RID), summarise, VISCODE = toString(VISCODE))
+  print(aggVisit)
+  data <- subset(data,!data$RID 
+                 %in%aggVisit[which(count.fields(textConnection((aggVisit[,"VISCODE"])), sep = ",")== 1), 1])
+  #print(nrow(data))
+  return(data)
+}
+combinedAdniFaq <- func.del.patients.single.time.point(combinedAdniFaq)
+length(unique(combinedAdniFaq$RID))
+```
+
+
+##converting the long format to wide format#
+```{r}
+##extracting the columns that need to be converted to wider format##
+mmseFeatures = grep("^MMSE", colnames(combinedAdniFaq), value = TRUE)
+faqFeatures = grep("^FAQ", colnames(combinedAdniFaq), value = TRUE)
+#adasFeatures = grep("^ADAS", colnames(combinedAdniFaq), value = TRUE)
+mostRelevantCols <- c(mri, imagingPET, csf, mmseFeatures, faqFeatures)
+demogs <- grep("^PT[^ID|AU].*", colnames(combinedAdniFaq), value = TRUE)
+demogsAndOthers <- c(demogs, "RID", "APOE4", "ORIGPROT", "COLPROT", "PHS", "AGE")
+# CSF biomarkers values are represented as characters due to presence of "<" or ">" symbols
+#convert them to numeric
+print("converting to Numeric")
+combinedAdniFaq$ABETA <- gsub('(<|>)','',combinedAdniFaq$ABETA)
+combinedAdniFaq$PTAU <- gsub('(<|>)','',combinedAdniFaq$PTAU)
+combinedAdniFaq$TAU <- gsub('(<|>)','',combinedAdniFaq$TAU)
+
+combinedAdniFaq$ABETA <- as.numeric(combinedAdniFaq$ABETA)
+combinedAdniFaq$PTAU <- as.numeric(combinedAdniFaq$PTAU)
+combinedAdniFaq$TAU <- as.numeric(combinedAdniFaq$TAU)
+
+##extracting the columns that need to be converted to wider format##
+selectedCols <- setdiff(c(colnames(combinedAdniFaq)), demogsAndOthers)
+convDenovoSelectedDf <- combinedAdniFaq[,selectedCols]
+combinedAdniFaqWide = reshape(convDenovoSelectedDf,idvar='PTID',timevar="VISCODE",dir='w')
+
+#convDenovoSelectedDf <- combinedAdniFaq[,demogsAndOthers]
+
+#save.image("~/Documents/ADNIVAMBN/VAMBNForADNI/ADNIVAMBN.RData")
+```
+
+##add snp features and baseline brain volumes##
+```{r}
+library(gdata)
+library(data.table)
+library(readxl)
+##add snp columns##
+#allSNPsAndBurdenScore<- read_csv("~/Documents/Documents_IT/snpWork/allSNPsAndBurdenScores.csv")
+#allSNPsAndBurdenScore$X1 = NULL
+#names(allSNPsAndBurdenScore)[names(allSNPsAndBurdenScore) == "SUBJID"] = "PTID"
+#allSNPsAndBurdenScore$PTID = sub("[0-9]+[\\_]", "", allSNPsAndBurdenScore$PTID)
+# ##add brain regions
+#EMC_ADNI_FS60_Phenotypes_Desikan_20180219<-read.xlsx("/Users/msood/Documents/Documents – IT-Admin’s MacBook Pro/BayesianNetworkAD/henryImagingData/EMC_ADNI_FS60_Phenotypes_Desikan_20180219.xlsx")
+#volumeRegion <- as.data.frame(EMC_ADNI_FS60_Phenotypes_Desikan_20180219)
+#brainRegion <- c(colnames(volumeRegion)[grep("Left|Right", colnames(volumeRegion))])
+#names(volumeRegion)[1] <- "PTID"
+#volumeRegion <- volumeRegion[,c("PTID",brainRegion)]
+#volumeRegion <- setDT(volumeRegion, keep.rownames = TRUE)[]
+#volumeRegion$rn <- NULL
+combinedAdniWide = combinedAdniFaqWide
+demogsAndOthersDf <- combinedAdniFaq[,c("PTID",demogsAndOthers)]
+#combinedAdniWide <- merge(combinedAdniWide, allSNPsAndBurdenScore, all.x= TRUE)
+
+##1.csf data frame##
+csfDf <- combinedAdniWide[,grep("PTID|ABETA|TAU|PTAU", colnames(combinedAdniWide), value = TRUE)]
+
+##Volumetric data frame##
+volumeDf <- combinedAdniWide[,grep("PTID|Entorhinal|Fusiform|MidTemp|Hippocampus|Ventricles|WholeBrain|ICV",
+                                      colnames(combinedAdniWide), value = TRUE)]
+
+
+##Cognitive test data frame##
+#cogTestFaqDf <- combinedAdniWide[,grep("^CDRSB|^ADASQ4|^MMSE\\.|^RAVLT|^MOCA|^LDELTOTAL|^DIGITSCOR|^TRABSCOR|^mPACCdigit|^mPACCtrailsB|^FAQ\\.|ADAS[^0-9|^Q4]|EcogPt|FAQTOTAL", colnames(combinedAdniWide), value = TRUE)]
+
+mmseDf <- combinedAdniWide[,grep("PTID|MMSE\\_", colnames(combinedAdniWide), value = TRUE)]
+
+faqDf <- combinedAdniWide[,grep("PTID|FAQ[A-Z].*\\.", colnames(combinedAdniWide), value = TRUE)]
+faqDf <- faqDf %>% dplyr::select(-contains("FAQTOTAL"))
+
+imagingPETDf <- as.data.frame(combinedAdniWide[,grep("PTID|FDG|PET|AV45", colnames(combinedAdniWide), value = TRUE)])
+
+##Diagnostic data frame##
+dxDf <- combinedAdniWide[,grep("PTID|DX", colnames(combinedAdniWide), value = TRUE)]
+
+
+# # Remove columns with more than 50% missing value
+csfDf = csfDf[ , -which(colMeans(is.na(csfDf)) > 0.50)]
+volumeDf = volumeDf[ , -which(colMeans(is.na(volumeDf)) > 0.50)]
+#cogTestFaqDf = cogTestFaqDf[ , -which(colMeans(is.na(cogTestFaqDf)) > 0.50)]
+mmseDf = mmseDf[ , -which(colMeans(is.na(mmseDf)) > 0.50)]
+faqDf = faqDf[ , -which(colMeans(is.na(faqDf)) > 0.50)]
+imagingPETDf = as.data.frame(imagingPETDf[ , -which(colMeans(is.na(imagingPETDf)) > 0.50)])
+#names(imagingPETDf)[1] = "FDG.bl"
+dxDf = dxDf[ , -which(colMeans(is.na(dxDf)) > 0.50)]
+
+#cortical regions
+#corticalDesikanDf <- combinedAdniWide[,brainRegion]
+
+#allSnpsDf = combinedAdniWide[,grep("^rs[0-9]*", colnames(combinedAdniWide), value = TRUE)]
+#allSnpsDf = as.data.frame(lapply(allSnpsDf[, grep("^rs[0-9]*", colnames(allSnpsDf), value = TRUE)], factor))
+#allSnpsDf = allSnpsDf[ , which(colMeans(is.na(allSnpsDf)) <= 0.5)]
+#pathways
+#pathwayCols = setdiff(colnames(allSNPsAndBurdenScore), grep("rs", colnames(allSNPsAndBurdenScore), value = TRUE))
+#pathwaysDf = combinedAdniWide[,setdiff(pathwayCols, "PTID")]
+#pathwaysDf = pathwaysDf[ , -which(colMeans(is.na(pathwaysDf)) > 0.5)]
+#relPathwayDf = as.data.frame(colnames(pathwaysDf))
+#write.csv(relPathwayDf, "/Users/msood/Documents/Documents_IT/snpWork/relevantPathwaysAD.csv")
+```
+
+
+
+```{r}
+##Add bl extension to the demogsAndOthers features##
+##Combine all the data frames##
+#allFeatures <- cbind.data.frame(demogsAndOthersDf, csfDf, volumeDf, cogTestDf, fdgDf, dxDf, snpDf, pathDf, corticalDesikanDf)
+demogsAndOthersDf$ORIGPROT = NULL
+demogsAndOthersDf$COLPROT = NULL
+demogsAndOthersDf = unique(demogsAndOthersDf)
+combinedAdniWide <- merge(combinedAdniWide, demogsAndOthersDf, all.x = TRUE)
+demogsAndOthers <- setdiff(demogsAndOthers, c("VISCDE","PTID", "ORIGPROT", "COLPROT", "RID"))
+demogsAndOthersDf <- combinedAdniWide[,c("PTID", demogsAndOthers)]
+colnames(demogsAndOthersDf) <- paste(colnames(demogsAndOthersDf) , ".bl", sep = "")
+names(demogsAndOthersDf)[1] <- "PTID"
+# Add group name to columns
+icol <- which(names(csfDf) == "PTID")
+colnames(csfDf)[-icol] <- paste("csf",colnames(csfDf)[-icol],  sep = "_")
+icol <- which(names(volumeDf) == "PTID")
+colnames(volumeDf)[-icol] <- paste("brain",colnames(volumeDf)[-icol],  sep = "_")
+#colnames(cogTestFaqDf) = paste0("Cog_",colnames(cogTestFaqDf))
+#colnames(corticalDesikanDf) = paste0("cortical_",colnames(corticalDesikanDf), ".bl")
+#colnames(allSnpsDf) = paste0("snp_",colnames(allSnpsDf), ".bl")
+#colnames(pathwaysDf) = paste0("path_",colnames(pathwaysDf), ".bl")
+
+
+#colnames(mmseDf) = paste0("MMSE_",colnames(adasDf))
+#colnames(faqDf) = paste0("FAQ_",colnames(faqDf))
+```
+
+
+```{r}
+# Auxiliary variables keep track of visit-wise and group-wise patient dropout. 
+# Measurements of features are marked by value missing not at random (MNAR).
+# MNAR  results from a systematic absence of subject data for a measurement type (feature group). 
+# get_aux_all_groups = function(cohortdata){
+#   mysample = cohortdata
+#   timepoint = str_extract(colnames(mysample), "m[0-9][0-9]")[1]
+#   print(timepoint)
+#   csf = select(mysample,grep( "csf",colnames(mysample),value=TRUE)) 
+#   #print(csf)
+#   volumes = select(mysample,grep( "brain",colnames(mysample),value=TRUE)) 
+#   #print(volumes)
+#   cogTest = select(mysample,grep( "Cog",colnames(mysample),value=TRUE)) 
+#   adas = select(mysample,grep( "ADAS",colnames(mysample),value=TRUE)) 
+#   #print(cogTest)
+#   snp = select(mysample,grep( "snp",colnames(mysample),value=TRUE)) 
+#   path = select(mysample,grep( "path",colnames(mysample),value=TRUE)) 
+#   cort = select(mysample,grep( "cortical",colnames(mysample),value=TRUE)) 
+#   output_aux = function(mysubsample){
+#     
+#     #return_df = data.frame()
+#     #groupname = deparse(substitute(a))
+#     #print("nsbsn")
+#     if(dim(mysubsample)[2] != 0 ){
+#       print("jjdjd")
+#       if(dim(mysubsample)[2]== 1){
+#         print("memem")
+#         mysubsample = mysubsample
+#       }else{
+#         # Add a new column for AUX
+#         new = "new"
+#         in.loop = mysubsample
+#         #print("jsksks")
+#         #print(in.loop)
+#         mysubsample[new] <- 0
+#         
+#         # Get rownames where all value is NA 
+#         mysubsample_NA = which(apply(in.loop, 1, function(x) all(is.na(x))))
+#         mysubsample_pat = names(mysubsample_NA)
+#         #print(mysubsample_pat)
+#         print("meemansa")
+#         #print(mysubsample_pat)
+#         if(length(mysubsample_pat) !=0 ){
+#           print("wewewew")
+#           mysubsample[which(rownames(mysubsample) %in% mysubsample_pat ),]$new <- 1
+#           #print(mysubsample)
+#           # Annoate aux column with group name and visit number 
+#           groupName = sub("_.*$", "", colnames(mysubsample)[1])
+#           print("meem1")
+#           print(groupName)
+#           new2 = paste(groupName,"aux",timepoint, sep = "_")
+#           colnames(mysubsample)[which(names(mysubsample) == "new")] <- new2
+#           print(paste0("Aux available for ", groupName, "at" ,timepoint ))
+#         }else{ 
+#           mysubsample$new  = NULL
+#           groupName = sub("_.*$", "", colnames(mysubsample)[1])
+#           print("meem2")
+#           print(groupName)
+#           print(paste0("Aux unavailable for ", groupName, "at" ,timepoint ))}
+#       }
+#       
+#     }else{  print(paste0("Missing group at",timepoint ))}
+#     
+#     return(mysubsample)
+#   }
+#   
+#   csf_aux = output_aux(mysubsample = csf)
+#   #print("nac")
+#   #print(csf_aux)
+#   volume_aux = output_aux(mysubsample = volumes)
+#   cogTest_aux = output_aux(mysubsample = cogTest)
+#   adas_aux = output_aux(mysubsample = adas)
+#   snp_aux = output_aux(mysubsample = snp)
+#   path_aux = output_aux(mysubsample = path)
+#   cort_aux = output_aux(mysubsample = cort)
+#   #diagnostics_aux = output_aux(mysubsample = diagnostics)
+#   
+#   outputdf <- data.frame(matrix("removelater", ncol = 1, nrow = nrow(mysample)))
+#   names(outputdf)[1]<- "toremove"
+#   if(dim(csf)[2] != 0 ){
+#     outputdf = as.data.frame(cbind(outputdf , csf_aux))
+#     #print(outputdf)
+#   } else{
+#     #print(paste0("CSF data unavailable for visit", timepoint))
+#   }
+#   if(dim(volumes)[2] != 0 ){
+#     outputdf = as.data.frame(cbind(outputdf , volume_aux))
+#   } else{
+#     #print(paste0("Volumetric data unavailable for visit", timepoint))
+#   }
+#   if(dim(cogTest)[2] != 0 ){
+#     outputdf = as.data.frame(cbind(outputdf , cogTest_aux))
+#   } else{
+#    # print(paste0("Cognition test unavailable for visit", timepoint))
+#   }
+#   if(dim(adas)[2] != 0 ){
+#     outputdf = as.data.frame(cbind(outputdf , adas_aux))
+#   } else{
+#    # print(paste0("Cognition test unavailable for visit", timepoint))
+#   }
+#   if(dim(snp)[2] != 0 ){
+#     outputdf = as.data.frame(cbind(outputdf , snp_aux))
+#   } else{
+#    # print(paste0("Snp unavailable for visit", timepoint))
+#   }
+#   if(dim(path)[2] != 0 ){
+#     outputdf = as.data.frame(cbind(outputdf , path_aux))
+#   } else{
+#    # print(paste0("Snp unavailable for visit", timepoint))
+#   }
+#   if(dim(cort)[2] != 0 ){
+#     outputdf = as.data.frame(cbind(outputdf , cort_aux))
+#   } else{
+#     #print(paste0("Cortical brain region unavailable for visit", timepoint))
+#   }
+#   outputdf$toremove = NULL
+#   return(outputdf)
+# }
+```
+
+
+```{r}
+#allData = merge(csfDf, volumeDf,mmseDf, faqDf, imagingPETDf, by = "PTID", all = TRUE)
+allData    =  Reduce(function(x, y) merge(x, y, all=TRUE), list(csfDf, volumeDf,mmseDf, faqDf, imagingPETDf))
+#allData = lapply(allData, as.integer)
+
+allData <- merge(allData, dxDf)
+#allData <- merge(allData, demogsAndOthersDf)
+visitData = list("visitbl" = allData[, grep(".bl", colnames(allData), value = TRUE)],
+                 "visit1" = allData[, grep(".m06", colnames(allData), value = TRUE)],
+                 "visit2" = allData[, grep(".m12", colnames(allData), value = TRUE)],
+                 "visit3" = allData[, grep(".m24", colnames(allData), value = TRUE)],
+                 "visit4" = allData[, grep(".m36", colnames(allData), value = TRUE)]
+                )
+                 # "visit7" = allData[, grep(".m60", colnames(allData), value = TRUE)],
+                 # "visit8" = allData[, grep(".m72", colnames(allData), value = TRUE)]
+                 #)
+visitData <- cbind.data.frame(demogsAndOthersDf,visitData$visitbl,visitData$visit1,visitData$visit2, visitData$visit3, visitData$visit4)
+#visitData = Reduce(function(x, y) merge(x, y, all=TRUE), list(demogsAndOthersDf,visitData$visitbl,visitData$visit1,visitData$visit2, visitData$visit3, visitData$visit4, visitData$visit5, visitData$visit6))
+
+```
+
+##impute the data#
+```{r}
+#colnames(visitData$visitbl) = sub("bl", "m00", colnames(visitData$visitbl)) 
+# Create auxillary columns - group-wise and visit-wise
+#visitData_aux = sapply(visitData, get_aux_all_groups)
+
+#Impute value (visit wise)
+#set.seed(123)
+#visitData_imputed = imputedData = sapply(visitData_aux, function(x)missForest::missForest(x, ntree = 500)[1])
+
+
+# set.seed(123)
+# ##Make it as one data frame##
+# imputedData <- cbind.data.frame(demogsAndOthersDf, visitData_imputed$visitbl.ximp, visitData_imputed$visit1.ximp,
+#                             visitData_imputed$visit2.ximp, visitData_imputed$visit3.ximp, dxDf)
+# imputedDataCp = imputedData
+# colClean <- function(x){ colnames(x) <- gsub("m00", "bl", colnames(x)); x } 
+# imputedData <- colClean(imputedData) 
+# colClean <- function(x){ colnames(x) <- gsub("csf_aux", "csf.aux", colnames(x)); x } 
+# imputedData <- colClean(imputedData) 
+# colClean <- function(x){ colnames(x) <- gsub("brain_aux", "brain.aux", colnames(x)); x } 
+# imputedData <- colClean(imputedData) 
+# colClean <- function(x){ colnames(x) <- gsub("Cog_aux", "Cog.aux", colnames(x)); x } 
+# imputedData <- colClean(imputedData) 
+# colClean <- function(x){ colnames(x) <- gsub("m00", "bl", colnames(x)); x } 
+# imputedData <- colClean(imputedData) 
+# colClean <- function(x){ colnames(x) <- gsub("m00", "bl", colnames(x)); x } 
+# imputedData <- colClean(imputedData) 
+# colClean <- function(x){ colnames(x) <- gsub("csf_", "", colnames(x)); x } 
+# imputedData <- colClean(imputedData) 
+# colClean <- function(x){ colnames(x) <- gsub("brain_", "", colnames(x)); x } 
+# imputedData <- colClean(imputedData) 
+# colClean <- function(x){ colnames(x) <- gsub("Cog_", "", colnames(x)); x } 
+# imputedData <- colClean(imputedData) 
+# colClean <- function(x){ colnames(x) <- gsub("snp_", "", colnames(x)); x } 
+# imputedData <- colClean(imputedData) 
+# colClean <- function(x){ colnames(x) <- gsub("cortical_", "", colnames(x)); x } 
+# imputedData <- colClean(imputedData) 
+# colClean <- function(x){ colnames(x) <- gsub("_", ".", colnames(x)); x } 
+# imputedData <- colClean(imputedData) 
+# #setnames(imputedData, old = grep("rs[0-9]+", colnames(imputedData), value= TRUE), new = gsub("\\.bl","", grep("rs[0-9]+", colnames(imputedData), value= TRUE)))
+# #setnames(imputedData, old = grep("Left|Right", colnames(imputedData), value= TRUE), new = gsub("\\.bl","", grep("Left|Right", colnames(imputedData), value= TRUE)))
+#visitData_OBB = sapply(visitData_aux, function(x) missForest::missForest(x, ntree = 100)[2])
+save.image("~/Documents/Documents_IT/ADNIVAMBN_paper_all/VAMBNForADNI/ADNIVAMBN.RData") 
+```

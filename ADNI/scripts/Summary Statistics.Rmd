@@ -1,0 +1,132 @@
+---
+title: "Summary Statistics Table"
+author: "Meemansa"
+date: "15/03/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls())
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(qwraps2) 
+adni.baseline <- readRDS(file = paste0("data/stalone_VIS1.rds"))
+mmse.baseline <- readRDS(file = paste0("data/mmse_VIS1.rds"))
+adni.demog.baseline = merge(adni.baseline, mmse.baseline)
+adni.demog =  adni.baseline[,c("SA_DX_VIS1","SA_AGE_VIS1", "SA_PTGENDER_VIS1", "SA_PTEDUCAT_VIS1", "SA_APOE4_VIS1","SA_Amyloid_VIS1")]
+adni.demog.baseline = adni.demog.baseline[,c("SA_DX_VIS1","SA_AGE_VIS1", "SA_PTGENDER_VIS1", "SA_PTEDUCAT_VIS1", "SA_APOE4_VIS1","SA_Amyloid_VIS1", grep("MMSE", colnames(adni.demog.baseline), value = TRUE))]
+
+table_summary <- list(
+  "Age" = list(
+    "Mean (sd)" = ~ mean_sd(SA_AGE_VIS1)
+  ),
+  "Gender" = list(
+    "Male" = ~ qwraps2::n_perc(SA_PTGENDER_VIS1 == 'Male'),
+    "Female" = ~ qwraps2::n_perc(SA_PTGENDER_VIS1 == 'Female')
+  ),
+  "Education (years)" = list(
+    "Mean (sd)" = ~ mean_sd(SA_PTEDUCAT_VIS1)
+  ),
+  # "Ethnicity" = list(
+  #   "Not Hispanic" = ~ qwraps2::n_perc(SA_PTETHCAT_VIS1 == 'Not Hisp/Latino'),
+  #   "Hispanic" = ~ qwraps2::n_perc(SA_PTETHCAT_VIS1 == 'Hisp/Latino')
+  # ),
+  # "Race" = list(
+  #   "White" = ~ qwraps2::n_perc(SA_PTRACCAT_VIS1 == 'White')
+  # ),
+  # "Marital Status" = list(
+  #   "Married" = ~ qwraps2::n_perc(SA_PTMARRY_VIS1 == 'Married'),
+  #   "Never married" = ~ qwraps2::n_perc(SA_PTMARRY_VIS1 == 'Never married'),
+  #   "Divorced" = ~ qwraps2::n_perc(SA_PTMARRY_VIS1 == 'Divorced'),
+  #   "Widowed" = ~ qwraps2::n_perc(SA_PTMARRY_VIS1 == 'Widowed')
+  # ),
+  "APOE4" = list(
+    "Positive (1 allele)" = ~ qwraps2::n_perc(SA_APOE4_VIS1 == 1),
+    "Positive (2 alleles)" = ~ qwraps2::n_perc(SA_APOE4_VIS1 == 2),
+    "Negative" = ~ qwraps2::n_perc(SA_APOE4_VIS1 == 0)
+  ),
+    "Amyloid" = list(
+    "Not measured" = ~ qwraps2::n_perc(SA_Amyloid_VIS1 == 0),
+    "Measured" = ~ qwraps2::n_perc(SA_Amyloid_VIS1 == 1)
+  )
+  
+)
+```
+
+```{r, results="asis"}
+orig_opt <- options()$qwraps2_markup
+options(qwraps2_markup = "markdown")
+
+
+whole_table <- summary_table(adni.demog.baseline,table_summary,by="SA_DX_VIS1")
+print(whole_table, rtitle = "Summary Statistics \1 \1 \1 \1 \1")
+```
+
+```{r, results="asis"}
+#orig_opt <- options()$qwraps2_markup
+#options(qwraps2_markup = "markdown")
+library(gtsummary)
+library(flextable)
+#webshot::install_phantomjs()
+#altoidaDf$gender[altoidaDf$gender == 1] = "Male"
+#altoidaDf$gender[altoidaDf$gender == 2] = "Female"
+#altoidaDf$gender = as.factor(altoidaDf$gender)
+names(adni.demog)[names(adni.demog) == "SA_AGE_VIS1"] = "age"
+names(adni.demog)[names(adni.demog) == "SA_DX_VIS1"] = "DX"
+names(adni.demog)[names(adni.demog) == "SA_PTGENDER_VIS1"] = "gender"
+names(adni.demog)[names(adni.demog) == "SA_PTEDUCAT_VIS1"] = "yearsOfEducation"
+#names(adni)[names(adni) == "SA_PTRACCAT_VIS1"] = "race"
+#names(adni)[names(adni) == "SA_PTMARRY_VIS1"] = "maritalStatus"
+names(adni.demog)[names(adni.demog) == "SA_APOE4_VIS1"] = "apoe4"
+names(adni.demog)[names(adni.demog) == "SA_Amyloid_VIS1"] = "Amyloid"
+tt <- adni.demog
+tt$SA_PTETHCAT_VIS1 = NULL
+tt$race = NULL
+table1 <- tbl_summary(tt, by=DX) %>%  
+  add_p() %>% 
+  modify_header(label = "**Variable**") %>% 
+  bold_labels() 
+
+table1 %>%
+  as_gt() %>%
+  gt::gtsave(filename = "adniSummary.html")
+
+
+table1 %>%
+  as_gt() %>%
+  gt::gtsave(filename = "adniSummary.png")
+
+table1
+```
+
+
+```{r, results="asis"}
+tt = adni.demog.baseline
+names(tt)[names(tt) == "SA_DX_VIS1"] = "DX"
+func.dx.median = function(mmse){
+  med_iqr_mmse_df = data.frame()
+  for(i in 1:length(unique(tt$DX))){
+    print(i)
+    dxDf = tt[tt$DX == unique(tt$DX)[i],]
+    print(dxDf[,mmse])
+    median = median(dxDf[,mmse], na.rm = TRUE)
+    first_quantile = quantile(dxDf[,mmse], 0.25, na.rm= TRUE)
+    third_quantile = quantile(dxDf[,mmse], 0.75, na.rm= TRUE)
+    med_iqr_mmse_df[i,"DX"] = unique(tt$DX)[i]
+    med_iqr_mmse_df[i,"MMSE"] = mmse
+    med_iqr_mmse_df[i,"median"] = median
+    med_iqr_mmse_df[i,"iqr"] = paste(first_quantile, "-",third_quantile)
+  }
+  return(med_iqr_mmse_df)
+}
+
+med_iqr_mmse_df  = data.frame()
+for(i in 1:length(grep("MMSE", colnames(adni.demog.baseline), value = TRUE))){
+  mmse = grep("MMSE", colnames(adni.demog.baseline), value = TRUE)[i]
+  med_iqr_mmse_df = rbind.data.frame(med_iqr_mmse_df,func.dx.median(mmse))
+}
+
+
+```
